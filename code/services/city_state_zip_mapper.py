@@ -1,9 +1,4 @@
-"""
-City-State to ZIP Code Mapping Service
-
-This service loads and provides lookup functionality for the city2zip.json mapping data.
-Supports the comprehensive JSON schema with metadata, FIPS codes, centroids, and aliases.
-"""
+# Converts city/state to ZIP codes using our JSON data file
 
 import json
 import logging
@@ -15,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CityInfo:
-    """Information about a city from the mapping data"""
+    """Holds city data from our JSON file"""
     city: str
     state: str
     zip_codes: List[str]
@@ -30,38 +25,33 @@ class CityInfo:
 
     @property
     def city_state_key(self) -> str:
-        """Return standardized 'City, ST' key format"""
+        """Returns 'City, ST' format"""
         return f"{self.city}, {self.state}"
 
     @property
     def primary_zips(self) -> List[str]:
-        """Return first few ZIP codes as 'primary' for faster searches"""
-        return self.zip_codes[:5]  # First 5 ZIPs as primary
+        """First 5 ZIPs (for quick searches)"""
+        return self.zip_codes[:5]
 
     @property
     def all_zips(self) -> List[str]:
-        """Return all ZIP codes for comprehensive searches"""
+        """All ZIPs (for thorough searches)"""
         return self.zip_codes
 
 
 class CityStateZipMapper:
-    """
-    Service for mapping city/state combinations to ZIP codes
-    
-    Loads the city2zip.json schema and provides fast lookup functionality
-    for converting city/state to ZIP codes for property searches.
-    """
+    """Looks up ZIP codes for a given city/state"""
     
     def __init__(self, mapping_file_path: str = None):
-        """
-        Initialize the mapper with JSON data
-        
-        Args:
-            mapping_file_path: Path to the city2zip data file
-        """
-        self.mapping_file = mapping_file_path or "city2zip_data.json"
+        """Load the city/ZIP mapping file"""
+        # Point to data folder by default
+        if mapping_file_path is None:
+            current_dir = Path(__file__).parent
+            project_root = current_dir.parent.parent
+            mapping_file_path = str(project_root / "data" / "city2zip_data.json")
+        self.mapping_file = mapping_file_path
         self.cities: Dict[str, CityInfo] = {}
-        self.aliases: Dict[str, str] = {}  # alias -> canonical city_state key
+        self.aliases: Dict[str, str] = {}  # nickname -> real name
         self.loaded = False
         
     def load_mapping_data(self) -> bool:

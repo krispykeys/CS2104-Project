@@ -1,8 +1,4 @@
-"""
-Find Property - Clean ATTOM API Integration with AI Analysis
-Uses official ATTOM Data API to find properties by location and provides both
-ATTOM valuations and AI-powered fair value estimates.
-"""
+# Property search using ATTOM API + AI valuation
 
 import os
 import asyncio
@@ -12,23 +8,21 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Import the property analysis engine
 from property_analysis_engine import PropertyAnalysisEngine, PropertyForAnalysis, FairValueEstimate
-
-# Import the city-state ZIP mapping service
 from services.city_state_zip_mapper import get_city_zip_mapper, get_zip_codes_for_city
 
-# Load environment variables
-load_dotenv()
+# Load API keys
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env")
 
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @dataclass
 class PropertyResult:
-    """Property result with ATTOM data and AI-powered fair value estimate"""
+    """Holds property data from ATTOM + AI estimate"""
     address: str
     city: str
     state: str
@@ -39,42 +33,37 @@ class PropertyResult:
     square_feet: Optional[int] = None
     lot_size: Optional[float] = None
     year_built: Optional[int] = None
-    listing_price: Optional[float] = None  # From ATTOM (market/assessed value)
-    fair_value_estimate: Optional[float] = None  # From AI analysis engine
-    ai_confidence: Optional[str] = None  # AI confidence level
-    ai_reasoning: Optional[str] = None  # AI analysis reasoning
+    listing_price: Optional[float] = None  # From ATTOM
+    fair_value_estimate: Optional[float] = None  # From AI
+    ai_confidence: Optional[str] = None
+    ai_reasoning: Optional[str] = None
     assessed_value: Optional[float] = None
     market_value: Optional[float] = None
     last_sale_price: Optional[float] = None
     last_sale_date: Optional[str] = None
 
 class ATTOMPropertyFinder:
-    """
-    Clean ATTOM API integration for property search and valuation.
-    Uses official ATTOM Data API endpoints with AI-powered fair value analysis.
-    """
+    """Searches for properties using ATTOM API and adds AI valuations"""
     
     def __init__(self):
-        """Initialize ATTOM Property Finder with AI analysis engine"""
+        """Setup API connection and AI engine"""
         self.api_key = os.getenv('ATTOM_API_KEY')
         self.use_mock_data = False
         
         if not self.api_key:
-            logger.warning("⚠️ ATTOM_API_KEY not found - will use mock data for demonstration")
+            logger.warning("⚠️ ATTOM_API_KEY not found - using mock data")
             self.use_mock_data = True
         
-        # Initialize AI analysis engine
+        # Setup AI engine for valuations
         try:
             self.analysis_engine = PropertyAnalysisEngine()
             logger.info("✅ AI Property Analysis Engine initialized")
         except Exception as e:
-            logger.warning(f"⚠️ Could not initialize AI analysis engine: {e}")
+            logger.warning(f"⚠️ Could not initialize AI: {e}")
             self.analysis_engine = None
         
-        # Official ATTOM API base URL
         self.base_url = "https://api.gateway.attomdata.com/propertyapi/v1.0.0"
         
-        # Headers for API requests
         self.headers = {
             "Accept": "application/json",
             "apikey": self.api_key if self.api_key else ""
@@ -84,62 +73,51 @@ class ATTOMPropertyFinder:
     
     async def find_properties_by_location(self, city: str = None, state: str = None, 
                                         zip_code: str = None, max_results: int = 50) -> List[PropertyResult]:
-        """
-        Find properties by location using official ATTOM API
-        
-        Args:
-            city: City name
-            state: State abbreviation (e.g., 'TX', 'CA')
-            zip_code: ZIP code
-            max_results: Maximum number of results to return
-        
-        Returns:
-            List of PropertyResult objects
-        """
-        # Use mock data if API key not available
+        """Search for properties by city/state or ZIP"""
+        # Use fake data if no API key
         if self.use_mock_data:
             logger.info("📝 Using mock data for demonstration")
             return await self._get_mock_properties(city, state, zip_code, max_results)
         
         try:
-            # Build search parameters based on location
+            # Build query params
             search_params = {
                 "format": "json",
-                "pageSize": min(max_results, 50)  # ATTOM API limit
+                "pageSize": min(max_results, 50)  # API max is 50
             }
             
-            # ZIP code search works reliably with ATTOM API
+            # ZIP is easiest to search
             if zip_code:
                 search_params["postalcode"] = zip_code
-                logger.info(f"Searching for properties by ZIP code: {zip_code}")
+                logger.info(f"Searching by ZIP: {zip_code}")
             
             elif city and state:
-                # Use dynamic city-state ZIP mapping for comprehensive coverage
-                logger.info(f"City/State search requested for {city}, {state}")
-                logger.info("Using dynamic ZIP code mapping for comprehensive property search")
+                # Convert city/state to ZIP codes
+                logger.info(f"Searching {city}, {state}")
+                logger.info("Converting to ZIP codes...")
                 
-                # Get ZIP codes from the mapping service
+                # Get ZIPs from our mapping file
                 try:
-                    # Try primary ZIP codes first for faster results
+                    # Try main ZIPs first (faster)
                     primary_zips = get_zip_codes_for_city(city, state, primary_only=True)
                     
                     if primary_zips:
-                        logger.info(f"Found {len(primary_zips)} primary ZIP codes for {city}, {state}: {primary_zips}")
+                        logger.info(f"Found {len(primary_zips)} ZIPs: {primary_zips}")
                         fallback_zips = primary_zips
                     else:
-                        # If no primary ZIPs, try all ZIP codes
+                        # Get all ZIPs if primary didn't work
                         all_zips = get_zip_codes_for_city(city, state, primary_only=False)
                         if all_zips:
-                            # Limit to first 8 ZIP codes to avoid too many API calls
+                            # Don't use too many (expensive)
                             fallback_zips = all_zips[:8]
-                            logger.info(f"Using first {len(fallback_zips)} ZIP codes from {len(all_zips)} total for {city}, {state}")
+                            logger.info(f"Using {len(fallback_zips)} of {len(all_zips)} ZIPs")
                         else:
-                            # Fall back to hardcoded ZIPs for cities not in mapping
+                            # Last resort: hardcoded ZIPs
                             fallback_zips = self._get_legacy_fallback_zips(city, state)
                             if fallback_zips:
-                                logger.warning(f"City not in mapping, using legacy fallback ZIP codes: {fallback_zips}")
+                                logger.warning(f"Using fallback ZIPs: {fallback_zips}")
                             else:
-                                logger.error(f"No ZIP codes available for {city}, {state}")
+                                logger.error(f"No ZIPs found for {city}, {state}")
                                 return []
                 
                 except Exception as e:

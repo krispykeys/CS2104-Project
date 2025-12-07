@@ -1,10 +1,4 @@
-"""
-Clean Property Analysis Engine
-=============================
-
-A focused analysis engine using Gemini 2.5 Pro to estimate fair property values
-based on property characteristics, market conditions, and comparable sales data.
-"""
+# AI property valuation using Gemini
 
 import google.generativeai as genai
 import json
@@ -15,16 +9,18 @@ from datetime import datetime
 from dataclasses import dataclass
 import os
 from dotenv import load_dotenv
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+# Load API keys
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env")
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PropertyForAnalysis:
-    """Property data structure for analysis"""
+    """Property info to send to AI"""
     address: str
     city: str
     state: str
@@ -46,73 +42,65 @@ class PropertyForAnalysis:
 
 @dataclass 
 class FairValueEstimate:
-    """Fair value estimate result"""
+    """AI's valuation result"""
     estimated_value: float
-    confidence_level: str  # "high", "medium", "low"
+    confidence_level: str  # high/medium/low
     analysis_factors: List[str]
     market_comparison: Optional[str] = None
     reasoning: Optional[str] = None
 
 
 class PropertyAnalysisEngine:
-    """Clean analysis engine using Gemini 2.5 Pro for property valuation"""
+    """Uses Gemini AI to estimate property values"""
     
     def __init__(self):
-        """Initialize the analysis engine"""
+        """Setup Gemini AI"""
         self.api_key = os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is required")
         
-        # Configure Gemini 2.5 Pro
+        # Connect to Gemini
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
         
-        logger.info("✅ Property Analysis Engine initialized with Gemini 2.0 Flash")
+        logger.info("✅ Property Analysis Engine initialized")
     
     async def estimate_fair_value(self, property_data: PropertyForAnalysis) -> FairValueEstimate:
-        """
-        Estimate fair market value of a property using AI analysis
-        
-        Args:
-            property_data: Property information to analyze
-            
-        Returns:
-            FairValueEstimate with estimated value and analysis
-        """
+        """Get AI's estimate of property value"""
         try:
-            # Build comprehensive analysis prompt
+            # Create prompt for AI
             analysis_prompt = self._build_analysis_prompt(property_data)
             
-            # Get AI analysis
+            # Ask Gemini
             response = await self._get_gemini_analysis(analysis_prompt)
             
-            # Parse and validate response
+            # Parse response
             estimate = self._parse_analysis_response(response, property_data)
             
-            logger.info(f"✅ Generated fair value estimate: ${estimate.estimated_value:,.0f} for {property_data.address}")
+            logger.info(f"✅ Estimated ${estimate.estimated_value:,.0f} for {property_data.address}")
             
             return estimate
             
         except Exception as e:
-            logger.error(f"❌ Error estimating fair value for {property_data.address}: {e}")
+            logger.error(f"❌ Error: {e}")
             
-            # Return fallback estimate
+            # Return backup estimate if AI fails
             fallback_value = self._get_fallback_estimate(property_data)
             return FairValueEstimate(
                 estimated_value=fallback_value,
                 confidence_level="low",
-                analysis_factors=["Fallback estimate due to analysis error"],
-                reasoning=f"Unable to complete full analysis: {str(e)}"
+                analysis_factors=["Fallback estimate"],
+                reasoning=f"Analysis failed: {str(e)}"
             )
     
     def _build_analysis_prompt(self, prop: PropertyForAnalysis) -> str:
-        """Build comprehensive analysis prompt for Gemini"""
+        """Create the prompt to send to Gemini"""
         
-        # Calculate property age
+        # Figure out how old the property is
         current_year = datetime.now().year
         property_age = current_year - prop.year_built if prop.year_built else "Unknown"
         
-        # Build price context
+        # Gather price info we have
         price_context = []
         if prop.listing_price:
             price_context.append(f"Current listing price: ${prop.listing_price:,.0f}")

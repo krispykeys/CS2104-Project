@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""
-Customer Agent Server - FastAPI backend for Home Value Estimator chatbot
-Integrates ATTOM API property search with Google Gemini conversational AI
-"""
+# FastAPI server for the chatbot - handles all API requests
 
 import os
 import logging
@@ -15,15 +12,22 @@ from typing import Dict, Any, Optional, List
 import re
 from datetime import datetime
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
-# Load environment variables
-load_dotenv()
+# Setup paths for imports
+code_dir = Path(__file__).parent
+project_root = code_dir.parent
+sys.path.insert(0, str(code_dir))
 
-# Import components
+# Load API keys
+load_dotenv(project_root / ".env")
+
+# Import our modules
 from agents.customer_agent import CustomerAgent
 from find_property import ATTOMPropertyFinder
 
-# Data models
+# Request/response models for the API
 class FrontendPreferences(BaseModel):
     location: Optional[str] = None
     property_types: Optional[List[str]] = None
@@ -52,16 +56,16 @@ class ChatMessageResponse(BaseModel):
 
 # Helper functions
 def extract_location_from_message(message: str) -> Optional[Dict[str, str]]:
-    """Extract location information from user message"""
+    """Pull out city/state or ZIP from user's message"""
     message_lower = message.lower()
     
-    # ZIP code pattern (5 digits)
+    # Check for ZIP code first (easiest)
     zip_pattern = r'\b\d{5}\b'
     zip_match = re.search(zip_pattern, message)
     if zip_match:
         return {'zip_code': zip_match.group()}
     
-    # City, State patterns
+    # Try different city/state formats
     city_state_patterns = [
         r'(?:in|near|around)\s+([a-zA-Z\s]+),\s*([a-zA-Z]{2})\b',
         r'(?:in|near|around)\s+([a-zA-Z\s]+)\s+([a-zA-Z]{2})\b',
@@ -76,7 +80,7 @@ def extract_location_from_message(message: str) -> Optional[Dict[str, str]]:
             if len(city) > 1 and city not in ['The', 'In', 'On', 'At', 'Is', 'Are']:
                 return {'city': city, 'state': state}
     
-    # Common cities
+    # Fallback for common cities mentioned alone
     common_cities = {
         'austin': {'city': 'Austin', 'state': 'TX'},
         'denver': {'city': 'Denver', 'state': 'CO'},
@@ -90,7 +94,7 @@ def extract_location_from_message(message: str) -> Optional[Dict[str, str]]:
     return None
 
 def format_properties_for_chat(properties: List, location: Dict[str, str]) -> str:
-    """Format property results for chatbot conversation with dual pricing"""
+    """Turn property data into a nice chat message"""
     location_str = location.get('zip_code', f"{location.get('city', '')}, {location.get('state', '')}")
     
     if not properties:
@@ -102,7 +106,7 @@ def format_properties_for_chat(properties: List, location: Dict[str, str]) -> st
         response += f"🏠 **Property {i}**\n"
         response += f"📍 {prop.address}\n"
         
-        # Show both price estimates with clear labels
+        # Show AI estimate first
         if hasattr(prop, 'fair_value_estimate') and prop.fair_value_estimate:
             confidence_emoji = {"high": "🎯", "medium": "📊", "low": "📈"}.get(
                 getattr(prop, 'ai_confidence', 'medium'), "💰"
@@ -112,7 +116,7 @@ def format_properties_for_chat(properties: List, location: Dict[str, str]) -> st
         if hasattr(prop, 'listing_price') and prop.listing_price:
             response += f"🏷️ **Listed Price**: ${prop.listing_price:,.0f}\n"
         
-        # Add property details if available
+        # Add basic property info
         details = []
         if hasattr(prop, 'bedrooms') and prop.bedrooms:
             details.append(f"{prop.bedrooms} bed")
@@ -127,7 +131,7 @@ def format_properties_for_chat(properties: List, location: Dict[str, str]) -> st
         if hasattr(prop, 'year_built') and prop.year_built:
             response += f"📅 Built: {prop.year_built}\n"
         
-        # Add AI confidence note for transparency
+        # Show how confident the AI is
         if hasattr(prop, 'ai_confidence') and prop.ai_confidence:
             confidence_text = {
                 "high": "High confidence",
@@ -141,19 +145,19 @@ def format_properties_for_chat(properties: List, location: Dict[str, str]) -> st
     response += "Would you like to see more details about any of these properties, or search in a different area?"
     return response
 
-# Set up logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Check environment
+# Make sure we have API key
 api_key = os.getenv("GEMINI_API_KEY")
 if not api_key:
     raise ValueError("GEMINI_API_KEY is required")
 
-# Initialize FastAPI app
+# Create FastAPI app
 app = FastAPI(title="Home Value Estimator Customer Agent API")
 
-# CORS middleware
+# Allow frontend to talk to backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -162,7 +166,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize components
+# Create our main objects
 customer_agent = CustomerAgent(api_key)
 property_finder = ATTOMPropertyFinder()
 
@@ -170,7 +174,7 @@ logger.info("✅ Customer Agent Server initialized")
 
 @app.post("/chat/start", response_model=ChatStartResponse)
 async def start_chat(request: ChatStartRequest):
-    """Start a new chatbot session"""
+    """Creates a new chat session"""
     try:
         session = customer_agent.start_chatbot_session()
         
@@ -185,9 +189,9 @@ async def start_chat(request: ChatStartRequest):
 
 @app.post("/chat/message", response_model=ChatMessageResponse)
 async def send_message(request: ChatMessageRequest):
-    """Send a message to the chatbot"""
+    """Handles user messages and responses"""
     try:
-        # Check if it's a property request
+        # See if user wants property search
         user_message_lower = request.message.lower()
         property_keywords = [
             'properties', 'homes', 'houses', 'real estate',
@@ -201,6 +205,7 @@ async def send_message(request: ChatMessageRequest):
             location = extract_location_from_message(request.message)
             if location:
                 try:
+                    # Search for properties
                     properties = await property_finder.find_properties_by_location(
                         city=location.get('city'),
                         state=location.get('state'),
@@ -219,7 +224,7 @@ async def send_message(request: ChatMessageRequest):
                 except Exception as e:
                     logger.error(f"Property search error: {e}")
         
-        # Default conversational response
+        # Regular conversation if not searching
         response_message = await customer_agent.handle_chatbot_message(
             request.session_id, 
             request.message
