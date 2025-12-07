@@ -1,0 +1,30 @@
+# Core web framework and server
+fastapi>=0.104.0
+uvicorn[standard]>=0.23.0
+
+# HTTP client and async support  
+httpx
+aiofiles
+requests>=2.25.0
+
+# Environment and configuration
+python-dotenv
+
+# AI and Machine Learning
+google-generativeai
+pydantic>=2.0.0
+
+# Data handling and validation
+pandas
+numpy
+
+# Date and time utilities
+python-dateutil
+
+# Testing
+pytest
+pytest-asyncio
+respx
+
+# ATTOM Data API Integration
+# (No specific package needed - using requests/httpx)

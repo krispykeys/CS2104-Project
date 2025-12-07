@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/us-city-zip-map.schema.json",
+  "title": "US City → ZIP Codes",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "generated_at": { "type": "string", "format": "date-time" },
+        "source_notes": { "type": "string" }
+      },
+      "required": ["title", "version", "generated_at"]
+    },
+    "records": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/CityZipMapping" },
+      "uniqueItems": false
+    }
+  },
+  "required": ["metadata", "records"],
+  "$defs": {
+    "StateCode": {
+      "type": "string",
+      "pattern": "^(A[KLRZ]|C[AOT]|D[CE]|F[LMP]|G[AUP]|H[I]|I[ADLN]|K[SY]|L[A]|M[ADEHINOPST]|N[CDEHJMVY]|O[HKR]|P[A]|R[I]|S[CD]|T[NX]|U[T]|V[AIT]|W[AIVY])$",
+      "description": "USPS 2-letter state/territory code"
+    },
+    "Zip5": {
+      "type": "string",
+      "pattern": "^[0-9]{5}$",
+      "description": "5-digit ZIP Code"
+    },
+    "CityZipMapping": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "minLength": 1,
+          "description": "USPS preferred city name (capitalization free-form)"
+        },
+        "state": { "$ref": "#/$defs/StateCode" },
+        "place_type": {
+          "type": "string",
+          "enum": ["incorporated", "cdp", "neighborhood", "unincorporated", "alias"],
+          "description": "Optional: classification for the place name"
+        },
+        "county_names": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: one or more counties the city spans"
+        },
+        "fips": {
+          "type": "object",
+          "properties": {
+            "state_fips": { "type": "string", "pattern": "^[0-9]{2}$" },
+            "county_fips": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[0-9]{5}$" }
+            },
+            "place_fips": { "type": "string", "pattern": "^[0-9]{5}$" }
+          },
+          "additionalProperties": false
+        },
+        "aliases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional: known alternate/vanity names that map to the same zips"
+        },
+        "zip_codes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/Zip5" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "All 5-digit ZIPs associated with this city/state"
+        },
+        "centroid": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lon": { "type": "number", "minimum": -180, "maximum": 180 }
+          },
+          "required": ["lat", "lon"]
+        }
+      },
+      "required": ["city", "state", "zip_codes"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
